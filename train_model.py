@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import re
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
@@ -14,11 +15,11 @@ print("="*70)
 # Load data
 print("\n📂 Loading dataset...")
 try:
-    df = pd.read_csv('data/oneplus_data.csv')
+    df = pd.read_csv('data/One_Plus_Phones_cleaned.csv')
     print(f"✓ Dataset loaded from 'data/oneplus_data.csv'")
 except FileNotFoundError:
     try:
-        df = pd.read_csv('oneplus_data.csv')
+        df = pd.read_csv('data/One_Plus_Phones_cleaned.csv')
         print(f"✓ Dataset loaded from 'oneplus_data.csv'")
     except:
         print("❌ Dataset not found!")
@@ -77,6 +78,45 @@ print(f"   ✓ All required columns found!")
 print(f"\n🔧 Preprocessing data...")
 # Select only required columns
 df_model = df[feature_cols + [target_col]].copy()
+
+# Helper to parse memory/storage strings like '8 GB', '128GB', '1 TB' into numeric GB
+def parse_size_to_gb(value):
+    if pd.isna(value):
+        return np.nan
+    if isinstance(value, (int, float)):
+        return value
+    s = str(value).strip().upper()
+    # Remove commas and other separators
+    s = s.replace(',', '')
+    # Match patterns like '8 GB', '128GB', '1 TB', '512 MB'
+    m = re.match(r"^(\d+(?:\.\d+)?)\s*(GB|G|TB|T|MB|M)?$", s)
+    if not m:
+        # Try to extract digits
+        digits = re.findall(r"\d+(?:\.\d+)?", s)
+        if digits:
+            num = float(digits[0])
+            return num
+        return np.nan
+    num = float(m.group(1))
+    unit = m.group(2)
+    if not unit or unit in ('GB', 'G'):
+        return num
+    if unit in ('TB', 'T'):
+        return num * 1024
+    if unit in ('MB', 'M'):
+        return num / 1024
+    return num
+
+# Convert RAM and ROM to numeric GB values
+if 'RAM' in df_model.columns:
+    df_model['RAM'] = df_model['RAM'].apply(parse_size_to_gb)
+if 'ROM' in df_model.columns:
+    df_model['ROM'] = df_model['ROM'].apply(parse_size_to_gb)
+
+# Coerce other numeric-like columns to numeric
+for col in ['Battery_in_mAh', 'Display_size_cm', 'Rating', target_col]:
+    if col in df_model.columns:
+        df_model[col] = pd.to_numeric(df_model[col].astype(str).str.replace('[^0-9\.\-]','', regex=True), errors='coerce')
 
 # Remove rows with missing values
 initial_rows = len(df_model)
